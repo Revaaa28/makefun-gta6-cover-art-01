@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEON COAST — Vice Cover Studio</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<main class="app">
+  <section class="controls">
+    <h1>NEON COAST</h1>
+    <p class="tag">Vice Cover Studio — your photo, poster energy.</p>
+    <p class="hint">Drop in your own photos, arrange the panels, pick a grade, export a share-ready PNG. Photos never leave this machine.</p>
+
+    <h2>1 · Photos</h2>
+    <div id="thumbs" class="thumbs"></div>
+    <div id="drop" class="drop">Drag photos here, or use the picker below.<br>They stay on your machine.</div>
+    <label class="field">Add photos
+      <input id="photo" type="file" accept="image/*" multiple>
+    </label>
+    <div class="row">
+      <button id="sample-both" type="button">Use both samples</button>
+      <button id="spread" type="button">Spread one photo</button>
+    </div>
+
+    <h2>2 · Layout</h2>
+    <div id="layouts" class="chips"></div>
+
+    <h2>3 · Colour grade</h2>
+    <div id="grades" class="chips"></div>
+
+    <h2>4 · Caption</h2>
+    <label class="field">Title <input id="title" type="text" maxlength="26" value="NEON COAST"></label>
+    <label class="field">Subtitle <input id="subtitle" type="text" maxlength="40" value="Sunset Heist"></label>
+    <label class="field">Heat — <span id="stars-label">5 stars</span>
+      <input id="stars" type="range" min="0" max="5" step="1" value="5">
+    </label>
+
+    <h2>5 · Selected panel</h2>
+    <p class="hint" id="panel-label">Panel 1 — click a panel on the cover, drag it to reposition.</p>
+    <label class="field">Photo for this panel
+      <select id="panel-photo"></select>
+    </label>
+    <label class="field">Zoom — <span id="zoom-label">100%</span>
+      <input id="zoom" type="range" min="1" max="2.4" step="0.02" value="1">
+    </label>
+
+    <h2>6 · Export size</h2>
+    <label class="field">Post size
+      <select id="size"></select>
+    </label>
+    <div class="row">
+      <button id="undo" type="button">&#8617; Undo</button>
+      <button id="redo" type="button">Redo &#8618;</button>
+      <button id="shuffle" type="button">Shuffle panels</button>
+    </div>
+    <button id="export" type="button">Export PNG</button>
+    <p id="status" role="status"></p>
+  </section>
+  <section class="stage">
+    <canvas id="cover" width="1920" height="1080" aria-label="Live cover preview"></canvas>
+    <p class="bar">Live preview — <b id="size-label">1920 x 1080</b> · click a panel to select it, drag to reposition, scroll-free zoom in step 5.</p>
+  </section>
+</main>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
