@@ -1,27 +1,31 @@
-// NEON COAST — Vice Cover Studio: editor wiring.
+// NEON COAST — Vice Cover Studio: editor wiring (v2).
 // Live preview, local-only photo loading, per-panel editing with drag and
-// zoom, undo/redo history, full-size PNG export, and ?shot= screenshot modes.
+// zoom, undo/redo history, single-size and export-all PNG export, and the
+// ?shot= screenshot modes. The editor opens on the flagship scene: the
+// nine-panel Mosaic 9 layout in the Poster Ink grade at 1920x1080, with the
+// four sample photos cycled distinctly across the panels.
 import { GRADES, LAYOUTS, SIZES, defaultPanels, panelRects, renderCover } from './cover.js';
-import { SAMPLES, shotState, tunePanelsForShot } from './shots.js';
+import { SAMPLES, shotSize, shotState, tunePanelsForShot } from './shots.js';
 
 const canvas = document.getElementById('cover');
 const statusEl = document.getElementById('status');
 const query = new URLSearchParams(location.search);
 const shot = query.get('shot');
+const COVER_SHOTS = ['cover', 'portrait', 'square'];
 
 let photos = []; // [{ img, name }]
-let size = SIZES[3]; // landscape by default
+let size = SIZES[3]; // landscape 1920x1080 by default
 let selected = 0;
 let history = [];
 let historyAt = -1;
 
 let state = {
-  layout: 'grid6',
-  grade: 'vice',
+  layout: 'mosaic9',
+  grade: 'posterInk',
   title: 'NEON COAST',
   subtitle: 'Sunset Heist',
   stars: 5,
-  panels: defaultPanels('grid6', 2),
+  panels: defaultPanels('mosaic9', SAMPLES.length),
 };
 
 export function loadImage(url) {
@@ -38,8 +42,9 @@ function images() { return photos.map((p) => p.img); }
 function redraw() {
   canvas.width = size.w;
   canvas.height = size.h;
-  renderCover(canvas, state, images(), shot === 'cover' ? -1 : selected);
-  document.getElementById('size-label').textContent = `${size.w} x ${size.h}`;
+  renderCover(canvas, state, images(), COVER_SHOTS.includes(shot) ? -1 : selected);
+  const label = document.getElementById('size-label');
+  if (label) label.textContent = `${size.w} x ${size.h}`;
 }
 
 function snapshot() {
@@ -128,6 +133,34 @@ function setSizeById(id) {
   redraw();
 }
 
+// ---- export ------------------------------------------------------------------
+
+function downloadCover(w, h) {
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  renderCover(out, state, images(), -1);
+  return new Promise((resolve) => {
+    out.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `neon-coast-${w}x${h}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      resolve();
+    }, 'image/png');
+  });
+}
+
+async function exportAllSizes() {
+  statusEl.textContent = 'Exporting all four sizes…';
+  for (const s of SIZES) {
+    await downloadCover(s.w, s.h);
+    // Browsers throttle rapid-fire downloads; a short pause keeps all four.
+    await new Promise((r) => setTimeout(r, 450));
+  }
+  statusEl.textContent = 'Saved all four sizes: 1080x1080, 1080x1350, 1080x1920 and 1920x1080 PNG.';
+}
+
 // ---- photo loading -----------------------------------------------------------
 
 async function addPhoto(url, name) {
@@ -177,7 +210,7 @@ function wireEditor() {
     await addFiles([...e.dataTransfer.files]);
   });
 
-  document.getElementById('sample-both').addEventListener('click', async () => { await loadSamples(); commit(); });
+  document.getElementById('sample-lib').addEventListener('click', async () => { await loadSamples(); commit(); });
   document.getElementById('spread').addEventListener('click', () => {
     const panel = state.panels[selected];
     const photo = panel ? panel.photo : 0;
@@ -215,18 +248,11 @@ function wireEditor() {
     if (historyAt < history.length - 1) { historyAt++; restore(history[historyAt]); }
   });
 
-  document.getElementById('export').addEventListener('click', () => {
-    const out = document.createElement('canvas');
-    out.width = size.w; out.height = size.h;
-    renderCover(out, state, images(), -1);
-    out.toBlob((blob) => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `neon-coast-${size.w}x${size.h}.png`;
-      a.click();
-      statusEl.textContent = `Saved neon-coast-${size.w}x${size.h}.png`;
-    }, 'image/png');
+  document.getElementById('export').addEventListener('click', async () => {
+    await downloadCover(size.w, size.h);
+    statusEl.textContent = `Saved neon-coast-${size.w}x${size.h}.png`;
   });
+  document.getElementById('export-all').addEventListener('click', exportAllSizes);
 
   // Panel picking + dragging on the preview.
   let drag = null;
@@ -260,17 +286,15 @@ function wireEditor() {
 
 async function boot() {
   await loadSamples();
-  if (shot === 'cover') {
+  if (COVER_SHOTS.includes(shot)) {
     document.body.classList.add('shot-cover');
     state = tunePanelsForShot(shotState(query, photos.length), query);
-    const w = Number(query.get('w') || 1920), h = Number(query.get('h') || 1080);
-    size = { id: 'shot', label: 'shot', w, h };
+    size = shotSize(query);
     redraw();
   } else if (shot === 'editor') {
     document.body.classList.add('shot-editor');
     wireEditor();
     state = tunePanelsForShot(shotState(query, photos.length), query);
-    if (query.get('layout') || query.get('grade')) state.panels = state.panels;
     setSizeById(query.get('size') || 'landscape');
     syncControls();
     snapshot();

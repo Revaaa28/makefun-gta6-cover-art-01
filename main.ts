@@ -1,14 +1,17 @@
-// NEON COAST — Vice Cover Studio (gta6-cover-art-01 entry, Node 22, standard library only).
+// NEON COAST — Vice Cover Studio, v2 (gta6-cover-art-01 entry, Node 22, standard library only).
 // The app is this directory's app/ folder: plain static files a desktop browser loads fully
 // offline (app/index.html and its ES modules, no library, no network request). This program
 // hands the app in: it copies app/ and screenshots/ from beside this file to /output and
 // writes /output/dossier.json, the summary the judge reads, with the vendored make.fun
 // library in vendor/makefun-app.ts (kept byte-identical to the kit's copy).
 //
-// NEON COAST turns any local photo plus a caption into multi-panel, GTA-style cover art:
-// six panel layouts, six per-pixel colour grades, an original gradient title block with a
-// neon script subtitle, a five-star heat meter and a round studio badge, exported as a PNG
-// at 1080x1080, 1080x1350, 1080x1920 or 1920x1080.
+// NEON COAST v2 turns any local photo plus a caption into multi-panel, GTA-style cover art:
+// six panel layouts led by the nine-panel Mosaic 9 cover, seven per-pixel colour grades led
+// by Poster Ink (gradient-map + posterize + Sobel edge darkening, so panels read as inked
+// poster art), a four-photo sample library, an original gradient title block with a halftone
+// band, a neon script subtitle, a five-star heat meter and a round studio badge, exported
+// as PNG at 1080x1080, 1080x1350, 1080x1920 or 1920x1080 — one size at a time, or all four
+// at once — with undo/redo while you work.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

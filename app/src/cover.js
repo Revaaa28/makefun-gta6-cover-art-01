@@ -1,6 +1,9 @@
-// NEON COAST — Vice Cover Studio: the cover renderer.
+// NEON COAST — Vice Cover Studio: the cover renderer (v2).
 // Data-driven panel layouts, real per-pixel colour grades on an offscreen
-// canvas, and an original hand-drawn title block (no borrowed art or fonts).
+// canvas, the Poster Ink illustrated grade (gradient-map + posterize + Sobel
+// edge darkening + saturation lift), and an original hand-drawn title block
+// with a halftone band, heat-star meter and round badge. No borrowed art,
+// logos or fonts anywhere.
 
 export const SIZES = [
   { id: 'square', label: '1080 x 1080 · Square post', w: 1080, h: 1080 },
@@ -10,6 +13,7 @@ export const SIZES = [
 ];
 
 export const GRADES = [
+  { id: 'posterInk', label: 'Poster Ink' },
   { id: 'vice', label: 'Vice Sunset' },
   { id: 'neon', label: 'Neon Nights' },
   { id: 'golden', label: 'Golden Hour' },
@@ -65,9 +69,9 @@ export function panelRects(layout, w, h) {
 }
 
 export const LAYOUTS = [
+  { id: 'mosaic9', label: 'Mosaic 9 — nine-panel cover' },
   { id: 'grid6', label: 'Grid 6 — classic cover' },
   { id: 'heroStrip', label: 'Hero + strip' },
-  { id: 'mosaic9', label: 'Mosaic 9' },
   { id: 'duoSplit', label: 'Duo split' },
   { id: 'fullBleed', label: 'Full bleed + insets' },
   { id: 'tiltedShots', label: 'Tilted snapshots' },
@@ -120,6 +124,73 @@ export function gradePixel(grade, r, g, b) {
   }
 }
 
+// ---- Poster Ink: the illustrated grade ------------------------------------
+// A panel-wide treatment (it needs each pixel's neighbours, so it cannot live
+// in gradePixel): gradient-map toward the Vice palette, lift saturation,
+// posterize every channel to flat ink bands, then multiply Sobel edges back
+// in as dark ink lines. The result reads as printed poster art, not a tint.
+
+function liftSaturation(r, g, b, amount) {
+  const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return [
+    Math.min(255, Math.max(0, grey + (r - grey) * amount)),
+    Math.min(255, Math.max(0, grey + (g - grey) * amount)),
+    Math.min(255, Math.max(0, grey + (b - grey) * amount)),
+  ];
+}
+
+function posterizeChannel(value, levels) {
+  const step = 255 / (levels - 1);
+  return Math.round(value / step) * step;
+}
+
+export function inkPosterizePanel(imageData) {
+  const d = imageData.data;
+  const levels = 6;
+  for (let i = 0; i < d.length; i += 4) {
+    const mapped = gradientMap(d[i], d[i + 1], d[i + 2], VICE_STOPS, 0.42);
+    const lifted = liftSaturation(mapped[0], mapped[1], mapped[2], 1.28);
+    d[i] = posterizeChannel(lifted[0], levels);
+    d[i + 1] = posterizeChannel(lifted[1], levels);
+    d[i + 2] = posterizeChannel(lifted[2], levels);
+  }
+  return imageData;
+}
+
+export function darkenInkEdges(imageData) {
+  const { width, height } = imageData;
+  const d = imageData.data;
+  const lum = new Float32Array(width * height);
+  for (let p = 0, i = 0; p < lum.length; p++, i += 4) {
+    lum[p] = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  }
+  const strength = 0.62;
+  const out = new Uint8ClampedArray(d);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const p = y * width + x;
+      const gx = -lum[p - width - 1] - 2 * lum[p - 1] - lum[p + width - 1]
+        + lum[p - width + 1] + 2 * lum[p + 1] + lum[p + width + 1];
+      const gy = -lum[p - width - 1] - 2 * lum[p - width] - lum[p - width + 1]
+        + lum[p + width - 1] + 2 * lum[p + width] + lum[p + width + 1];
+      const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy) / 720);
+      const keep = 1 - edge * strength;
+      const i = p * 4;
+      out[i] = d[i] * keep;
+      out[i + 1] = d[i + 1] * keep;
+      out[i + 2] = d[i + 2] * keep;
+    }
+  }
+  imageData.data.set(out);
+  return imageData;
+}
+
+function applyPosterInk(imageData) {
+  inkPosterizePanel(imageData);
+  darkenInkEdges(imageData);
+  return imageData;
+}
+
 // Draws one photo into a panel rect on an offscreen canvas, grades its
 // pixels, and returns the finished panel canvas.
 function renderPanel(photo, rect, panel, grade) {
@@ -147,12 +218,16 @@ function renderPanel(photo, rect, panel, grade) {
     x.fillStyle = grad; x.fillRect(0, 0, pw, ph);
   }
   const img = x.getImageData(0, 0, pw, ph);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const out = gradePixel(grade, d[i], d[i + 1], d[i + 2]);
-    d[i] = out[0]; d[i + 1] = out[1]; d[i + 2] = out[2];
+  if (grade === 'posterInk') {
+    x.putImageData(applyPosterInk(img), 0, 0);
+  } else {
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const out = gradePixel(grade, d[i], d[i + 1], d[i + 2]);
+      d[i] = out[0]; d[i + 1] = out[1]; d[i + 2] = out[2];
+    }
+    x.putImageData(img, 0, 0);
   }
-  x.putImageData(img, 0, 0);
   return c;
 }
 
@@ -195,7 +270,14 @@ function drawStar(ctx, cx, cy, r, fill) {
   ctx.stroke();
 }
 
-function drawBadge(ctx, w, h) {
+export function drawHeatStarMeter(ctx, cx, cy, r, stars) {
+  const total = r * 2 * 5 + r * 1.4;
+  for (let i = 0; i < 5; i++) {
+    drawStar(ctx, cx - total / 2 + r + i * r * 2.35, cy, r, i < stars ? '#ffc93c' : 'rgba(255,255,255,0.25)');
+  }
+}
+
+export function stampRoundBadge(ctx, w, h) {
   const r = Math.min(w, h) * 0.085;
   const cx = w - r - Math.min(w, h) * 0.035, cy = h - r - Math.min(w, h) * 0.035;
   ctx.save();
@@ -215,11 +297,11 @@ function drawBadge(ctx, w, h) {
   ctx.restore();
 }
 
-// The title block: halftone dots, squeezed gradient title, neon script
-// subtitle and a five-star heat meter.
-export function drawTitleBlock(ctx, w, h, state, reserved) {
-  const t = Math.round(h * (h >= w ? 0.17 : 0.21));
-  ctx.save();
+// The title band's ground: a deep gradient (or a scrim over full-bleed art)
+// plus the halftone dot field. The flagship nine-panel cover gets the strong
+// treatment — a denser, larger dot band with a second offset row of dots in
+// cyan, so the title sits on a printed-poster dot screen.
+export function paintHalftoneTitleBlock(ctx, w, t, reserved, strong) {
   if (reserved) {
     const bg = ctx.createLinearGradient(0, 0, 0, t);
     bg.addColorStop(0, '#12041f'); bg.addColorStop(1, '#2b0a4a');
@@ -230,15 +312,29 @@ export function drawTitleBlock(ctx, w, h, state, reserved) {
     scrim.addColorStop(1, 'rgba(10,2,24,0)');
     ctx.fillStyle = scrim; ctx.fillRect(0, 0, w, t * 1.25);
   }
-  // halftone dots, denser toward the right
-  const dotGap = Math.max(9, w * 0.011);
-  for (let y = dotGap * 0.6; y < t * 0.92; y += dotGap) {
+  const dotGap = Math.max(9, w * (strong ? 0.009 : 0.011));
+  const dotScale = strong ? 0.42 : 0.30;
+  const dotAlpha = strong ? 0.34 : 0.20;
+  for (let y = dotGap * 0.6; y < t * 0.96; y += dotGap) {
     for (let x = dotGap * 0.6; x < w; x += dotGap) {
-      const rr = (x / w) * dotGap * 0.30 + 0.6;
+      const rr = (x / w) * dotGap * dotScale + 0.6;
       ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,80,150,0.20)'; ctx.fill();
+      ctx.fillStyle = `rgba(255,80,150,${dotAlpha})`; ctx.fill();
+      if (strong) {
+        ctx.beginPath(); ctx.arc(x + dotGap * 0.5, y + dotGap * 0.5, rr * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,229,255,0.16)'; ctx.fill();
+      }
     }
   }
+}
+
+// The title block: halftone ground, squeezed gradient title, neon script
+// subtitle and the five-star heat meter.
+export function drawTitleBlock(ctx, w, h, state, reserved) {
+  const t = Math.round(h * (h >= w ? 0.17 : 0.21));
+  const strong = state.layout === 'mosaic9';
+  ctx.save();
+  paintHalftoneTitleBlock(ctx, w, t, reserved, strong);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, reserved ? t - Math.max(3, h * 0.005) : t, w, Math.max(3, h * 0.005));
 
@@ -273,10 +369,7 @@ export function drawTitleBlock(ctx, w, h, state, reserved) {
     ctx.fillText(subtitle, w / 2, t * 0.755);
     ctx.restore();
   }
-  const starR = t * 0.085, cy = t * 0.90, total = starR * 2 * 5 + starR * 1.4;
-  for (let i = 0; i < 5; i++) {
-    drawStar(ctx, w / 2 - total / 2 + starR + i * starR * 2.35, cy, starR, i < (state.stars ?? 5) ? '#ffc93c' : 'rgba(255,255,255,0.25)');
-  }
+  drawHeatStarMeter(ctx, w / 2, t * 0.90, t * 0.085, state.stars ?? 5);
   ctx.restore();
 }
 
@@ -294,13 +387,8 @@ export function defaultPanels(layout, photoCount) {
   }));
 }
 
-export function renderCover(canvas, state, photos, highlight = -1) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.fillStyle = '#160a26';
-  ctx.fillRect(0, 0, w, h);
+function paintPanels(ctx, w, h, state, photos, highlight) {
   const rects = panelRects(state.layout, w, h);
-  const overlayLayout = state.layout === 'fullBleed' || state.layout === 'tiltedShots';
   rects.forEach((rect, i) => {
     const panel = state.panels[i] || { photo: 0, zoom: 1, ox: 0, oy: 0 };
     const photo = photos[panel.photo] || photos[0] || null;
@@ -322,8 +410,36 @@ export function renderCover(canvas, state, photos, highlight = -1) {
     }
     ctx.restore();
   });
+  return rects;
+}
+
+function finishCover(ctx, w, h, state, overlayLayout) {
   drawTitleBlock(ctx, w, h, state, !overlayLayout);
-  drawBadge(ctx, w, h);
+  stampRoundBadge(ctx, w, h);
   drawGrain(ctx, w, h, Math.round((w * h) / 900));
   drawVignette(ctx, w, h);
+}
+
+// The flagship: nine inked panels under the strong halftone title block.
+export function renderNinePanelCover(canvas, state, photos, highlight = -1) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#160a26';
+  ctx.fillRect(0, 0, w, h);
+  paintPanels(ctx, w, h, { ...state, layout: 'mosaic9' }, photos, highlight);
+  finishCover(ctx, w, h, state, false);
+}
+
+export function renderCover(canvas, state, photos, highlight = -1) {
+  if (state.layout === 'mosaic9') {
+    renderNinePanelCover(canvas, state, photos, highlight);
+    return;
+  }
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#160a26';
+  ctx.fillRect(0, 0, w, h);
+  paintPanels(ctx, w, h, state, photos, highlight);
+  const overlayLayout = state.layout === 'fullBleed' || state.layout === 'tiltedShots';
+  finishCover(ctx, w, h, state, overlayLayout);
 }
